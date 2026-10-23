@@ -1,0 +1,81 @@
+use serde::Deserialize; // Serialize
+use serde_json::{json, Value}; // https://docs.rs/serde_json/latest/serde_json/enum.Value.html
+
+use crate::{
+    error::MyError,
+    tools::{
+        parse_tool_args,
+        ArgFixSpec,
+        built_in_tools::{
+            BuiltIn,
+            filesystem::utils::read_file_helper,
+        },
+    },
+};
+
+/// params for integer read_multiple_files
+#[derive(Deserialize)]
+pub struct Params {
+    pub paths: Vec<String>,
+}
+
+/// built-in tool
+pub struct ReadMultipleFiles;
+
+impl ReadMultipleFiles {
+    /// new
+    pub fn new() -> Self {
+        ReadMultipleFiles
+    }
+}
+
+impl BuiltIn for ReadMultipleFiles {
+    /// get tool name
+    fn name(&self) -> String {
+        "read_multiple_files".to_string()
+    }
+
+    /// get tool description
+    fn description(&self) -> String {
+        "Read the contents of multiple files simultaneously. This is more efficient than reading files one by one when you need to analyze or compare multiple files. Each file's content is returned with its path as a reference. Failed reads for individual files won't stop the entire operation. Only works within allowed directories.".to_string()
+    }
+
+    /// get tool schema
+    fn schema(&self) -> Value {
+        json!({
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "description": "The list of file paths to read.",
+                },
+            },
+            "required": ["paths"],
+            "type": "object",
+        })
+    }
+
+    /// run tool
+    fn run(&self, args: &str) -> Result<(String, Option<String>), MyError> {
+        //let params: Params = serde_json::from_str(args).map_err(|e| MyError::SerdeJsonFromStrError{error: e})?;
+        let params: Params = parse_tool_args(args, ArgFixSpec{ array_fields: Some(vec!["paths".to_string()]), object_fields: None })?;
+
+        let (contents, has_error) = params.paths.iter().fold(
+            (Vec::new(), false),
+            |(mut contents, mut has_error), path| {
+                match read_file_helper(&path.replace("\\", "/")) {
+                    Ok(c) => contents.push(format!("{path}:\n{c}\n")),
+                    Err(e) => {
+                        contents.push(format!("{path}: Error - {e}"));
+                        has_error = true;
+                    }
+                }
+                (contents, has_error)
+            },
+        );
+        if has_error {
+            Ok((format!("Read multiple files failed:\n---\n{}", contents.join("\n---\n")), Some(params.paths[0].clone())))
+        } else {
+            Ok((format!("Successfully read multiple files:\n---\n{}", contents.join("\n---\n")), Some(params.paths[0].clone())))
+        }
+    }
+}

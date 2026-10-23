@@ -1,0 +1,51 @@
+[package]
+name = "single"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]
+#openssl = { version = "0.10", features = ["vendored"] } # for musl
+argh = { version = "0.1.10" }
+thiserror = { version = "1.0" }
+reqwest = { version = "0.12", features = ["blocking"] }
+chrono = { version = "0.4", features = ["serde"] }
+#openai_dive = { version = "=1.1.0", features = ["stream", "download"] }
+#openai_dive = { git = "https://github.com/jingangdidi/openai-client.git", features = ["stream", "download"], branch = "1.1.0-glm" }
+openai_dive = { git = "https://github.com/jingangdidi/openai-client.git", features = ["stream", "download"], rev = "07e6688e426f0381e3232aa58dae7abedf9fcd54" } # 1.4.3-fidelity
+#futures = { version = "0.3" }
+uuid = { version = "1.10.0", features = ["v4"] }
+tokio = { version = "1.34", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+once_cell = { version = "1.19" }
+time = { version = "0.3.36" }
+glob = { version = "0.3.1" }
+zip = { version = "2.2" }
+ron = { version = "0.10.1" }
+base64 = { version = "0.22" }
+image = { version = "0.25.8" }
+walkdir = { version = "2.5.0" }
+grep = { version = "0.4.1" }
+similar = { version = "2.7.0" }
+url = { version = "2.5.8" }
+md-5 = { version = "0.10.5" }
+
+# search
+regex = { version = "1" }
+
+# skills
+serde_yaml = { version = "0.9.34" }
+
+# screen capture
+xcap = { version = "0.9.8", optional = true }
+
+[features]
+default = []
+screen-capture = ["xcap"]
