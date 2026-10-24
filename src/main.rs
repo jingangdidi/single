@@ -2,7 +2,7 @@ use std::process::exit;
 
 use single::{
     parse_paras::{parse_para, PARAS},
-    api::configure,
+    llm::run_llm,
 };
 
 #[tokio::main]
@@ -20,7 +20,7 @@ async fn main() {
     }
 
     // 调用 llm api 进行推理
-    if let Err(e) = run_single().await {
+    if let Err(e) = run_llm().await {
         println!("{}", e);
         exit(1);
     }

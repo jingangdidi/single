@@ -189,14 +189,6 @@ impl Tools {
     }
 }
 
-/// 以这些词为起始，则粗略认为是查看或删除任务，不需要把 tool 发给模型
-static SCHEDULE_LIST_REMOVE: &[&str; 21] = &[
-    "查看", "列出", "显示", "展示", "查询", "当前",
-    "移除", "删除", "取消", "删掉", "终止", "停止",
-    "list", "show", "display",
-    "remove", "delete", "cancel", "terminate", "stop", "kill",
-];
-
 /// chat with tools: built-in + external tools
 /// This just a simple loop, if not call tool, break the loop, return result
 /// +-------------------------------------------------------------+
@@ -361,7 +353,7 @@ pub async fn run_tools(
     let mut try_count = 0;
     let mut is_first: bool;
     let mut real_name: String; // 要调用的工具的真实名称，含有`_uuid第一部分`后缀
-    let mut final_result = String::new(); // 最终结果
+    let final_result: String; // 最终结果
 
     //'outer: loop {
     loop {
@@ -392,7 +384,7 @@ pub async fn run_tools(
                     let (mut result, language, is_image) = match try_call_tool(
                         &name_id,
                         &j.1,
-                        j.3.clone(),
+                        //j.3.clone(),
                         model,
                         Some(tool_schema.clone()),
                         Some(client.clone()),
@@ -558,7 +550,7 @@ pub async fn sub_agent(
                     let (mut result, _, is_image) = match Box::pin(try_call_tool(
                         &name_id,
                         &j.1,
-                        j.3.clone(),
+                        //j.3.clone(),
                         model,
                         None,
                         None,
@@ -594,18 +586,8 @@ pub async fn sub_agent(
                             }
                         },
                         Err(e) => {
-                            if let MyError::PlanModeError{ref info} = e {
-                                if info.starts_with("sub-agent skip, this tool has not been executed: ") {
-                                    (info.clone(), "text".to_string(), false)
-                                } else {
-                                    eprintln!("sub-agent call tool {}, raw args: {}", name_id[0], j.1);
-                                    return Err(e)
-                                }
-                            } else {
-                                eprintln!("sub-agent call tool {}, raw args: {}", name_id[0], j.1);
-                                //event!(Level::WARN, "{} call tool {}, safe args: {}", uuid, name_id[0], safe_args);
-                                return Err(e)
-                            }
+                            eprintln!("sub-agent call tool {}, raw args: {}", name_id[0], j.1);
+                            return Err(e)
                         },
                     };
                     call_tool_count += 1;
@@ -732,7 +714,7 @@ struct SkillParams {
 async fn try_call_tool(
     name_id: &[&str],
     paras: &str,
-    info: Option<String>,
+    //info: Option<String>,
     model: &str,
     tool_schema: Option<Vec<ChatCompletionTool>>,
     client: Option<Client>,

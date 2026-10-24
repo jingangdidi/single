@@ -20,23 +20,18 @@ const THOUGHT_END: &[&str] = &["</think>", "</thought>", "</thinking>", "</reaso
 /// uuid: 当前对话的uuid
 /// client: 创建的openai客户端
 /// parameters: 提问的参数
-/// model: 模型名称
 pub async fn not_use_stream(
     client: Client,
     parameters: ChatCompletionParameters,
-    model: &str,
 ) -> Result<(String, Option<String>), MyError> {
     //let result = client.chat().create(parameters).await.map_err(|e| MyError::ApiError{uuid: uuid.clone(), error: e})?;
     let mut whole_answer = "".to_string(); // 存储完整答案
     let mut thinking = "".to_string(); // 思考部分
-    let mut msg_token = None;
-    let mut role: u8 = 3; // 1表示User，2表示System，3表示Assistant，4表示Developer
     match client.chat().create(parameters).await { // 这里遇到错误不能直接返回，否则服务端与前端id差一个，后面代码insert_message没有执行，下个问题会显示在这个未回答完的答案末尾
         Ok(result) => {
             // 获取答案
             match &result.choices[0].message {
                 ChatMessage::System{content, ..} => {
-                    role = 2;
                     match content {
                         ChatMessageContent::Text(res) => {
                             whole_answer = res.to_string();
@@ -47,7 +42,6 @@ pub async fn not_use_stream(
                     }
                 },
                 ChatMessage::User{content, ..} => {
-                    role = 1;
                     match content {
                         ChatMessageContent::Text(res) => {
                             whole_answer = res.to_string();
@@ -58,7 +52,6 @@ pub async fn not_use_stream(
                     }
                 },
                 ChatMessage::Assistant{content: tmp_content, reasoning: tmp_reasoning_content, reasoning_content: tmp_reasoning_content_deepseek, ..} => {
-                    role = 3;
                     if let Some(c) = tmp_reasoning_content {
                         thinking = format!("<div class='think'>thinking ...<br>{}srxtzn</div>srxtznsrxtzn---srxtznsrxtzn", c);
                     } else if let Some(c) = tmp_reasoning_content_deepseek {
@@ -94,7 +87,6 @@ pub async fn not_use_stream(
                     }
                 },
                 ChatMessage::Developer{content, ..} => {
-                    role = 4;
                     match content {
                         ChatMessageContent::Text(res) => {
                             whole_answer = res.to_string();
@@ -107,7 +99,7 @@ pub async fn not_use_stream(
                 ChatMessage::Tool{content, ..} => eprintln!("{}", content), // println!("{}", content),
             }
             if let Some(usage) = result.usage {
-                msg_token = get_print_token(usage);
+                get_print_token(usage);
             }
         },
         Err(e) => println!("{:?}", e),

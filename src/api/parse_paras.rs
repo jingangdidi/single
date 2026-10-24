@@ -74,7 +74,7 @@ struct Paras {
 
     /// question prompt or file
     #[argh(option, short = 'q')]
-    question: String,
+    question: Vec<String>,
 
     /// select model by index, 1-based
     #[argh(option, short = 'm')]
@@ -125,7 +125,7 @@ struct Paras {
 ///#[derive(Debug, Default)]
 pub struct ParsedParas {
     pub api:             Api,                         // 各api的信息
-    pub question:        String,                      // 问题
+    pub question:        Vec<(String, bool)>,         // (问题, 是否图片)，可以指定多次`-q`
     pub selected_model:  SelectedModel,               // 根据索引选择的模型，1-based
     pub selected_tools:  Option<SelectedTools>,       // 选择工具，逗号间隔
     pub selected_prompt: Option<String>,              // 根据索引选择prompt，1-based
@@ -217,14 +217,22 @@ pub async fn parse_para() -> Result<ParsedParas, MyError> {
     let out: ParsedParas = ParsedParas{
         api: api,
         question: {
-            let tmp_file = Path::new(&para.question);
-            if tmp_file.exists() && tmp_file.is_file() {
-                // 读取文件内容
-                read_to_string(tmp_file)?
-            } else {
-                // 直接作为问题
-                para.question
+            let mut questions = Vec::with_capacity(para.question.len());
+            for q in para.question {
+                let tmp_file = Path::new(&q);
+                if tmp_file.exists() && tmp_file.is_file() {
+                    if is_image(tmp_file) {
+                        questions.push((q, true));
+                    } else {
+                        // 读取文件内容
+                        questions.push((read_to_string(tmp_file)?, false));
+                    }
+                } else {
+                    // 直接作为问题
+                    questions.push((q, false));
+                }
             }
+            questions
         },
         selected_model: SelectedModel::new(model, para.temperature, para.top_p, para.effort),
         selected_tools: match para.selected_tools {
@@ -353,6 +361,24 @@ fn get_outpath(o: &str) -> String {
     } else {
         o.to_string()
     }
+}
+
+/// 判断文件是否图片
+fn is_image(img: &Path) -> bool {
+    let ext = img
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    matches!(
+        ext.as_deref(),
+        Some(
+            "jpg" | "jpeg" | "jpe" | "jfif"
+            | "png" | "gif" | "bmp" | "webp"
+            | "tif" | "tiff" | "svg" | "ico"
+            | "heic" | "heif" | "avif" | "apng"
+        )
+    )
 }
 
 #[derive(Clone, Debug, Deserialize)]

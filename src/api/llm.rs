@@ -5,13 +5,19 @@ use openai_dive::v1::{
         ChatCompletionResponseFormat,
         ChatMessage,
         ChatMessageContent,
+        ChatMessageContentPart,
+        ChatMessageImageContentPart,
+        ImageUrlType,
     },
 };
 use serde_json::json;
 
 use crate::{
     parse_paras::PARAS,
-    openai::for_chat::not_use_stream, // 非stream，接收openai的完整答案
+    openai::{
+        for_chat::not_use_stream, // 非stream，接收openai的完整答案
+        for_image::image_to_base64_helper,
+    },
     error::MyError,
     tools::run_tools,
 };
@@ -97,12 +103,32 @@ pub async fn run_llm() -> Result<(), MyError> {
         );
     }
     // 插入问题
-    messages.push(
-        ChatMessage::User{
-            content: ChatMessageContent::Text(PARAS.question.clone()),
-            name: None,
+    for (q, is_image) in &PARAS.question {
+        if *is_image {
+            messages.push(
+                ChatMessage::User {
+                    content: ChatMessageContent::ContentPart(vec![ChatMessageContentPart::Image(
+                        ChatMessageImageContentPart {
+                            r#type: "image_url".to_string(),
+                            image_url: ImageUrlType {
+                                url: image_to_base64_helper(&q)?, // Either a URL of the image or the base64 encoded image data
+                                detail: None,
+                            },
+                        },
+                    )]),
+                    name: None,
+                }
+            );
+        } else {
+            messages.push(
+                ChatMessage::User{
+                    content: ChatMessageContent::Text(q.clone()),
+                    name: None,
+                }
+            );
         }
-    );
+    }
+    eprintln!("selected model: {}", PARAS.selected_model.name);
     // 提问
     if PARAS.selected_tools.is_some() || PARAS.selected_skills.is_some() {
         let result = run_tools(PARAS.selected_tools.clone(), PARAS.selected_skills.clone(), client, para_builder.clone(), &PARAS.selected_model.name, messages).await?;
@@ -110,7 +136,7 @@ pub async fn run_llm() -> Result<(), MyError> {
     } else {
         para_builder.messages(messages);
         let parameters = para_builder.build().map_err(|e| MyError::ChatCompletionError{error: e})?;
-        let (whole_answer, _thinking_content) = not_use_stream(client, parameters, &PARAS.selected_model.name).await?;
+        let (whole_answer, _thinking_content) = not_use_stream(client, parameters).await?;
         println!("{}", whole_answer);
     }
     Ok(())
