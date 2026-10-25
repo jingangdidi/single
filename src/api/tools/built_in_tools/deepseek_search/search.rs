@@ -180,5 +180,5 @@ pub async fn deepseek_search(query: &str, count: u8) -> Result<String, MyError> 
         .await
         .map_err(|e| MyError::OtherError{info: format!("failed to decode search response: {}", e)})?;
 
-    serde_json::to_string_pretty(&parsed.results).map_err(|e| MyError::ToJsonStirngError{uuid: "".to_string(), error: e})
+    serde_json::to_string_pretty(&parsed.results).map_err(|e| MyError::ToJsonStirngError{error: e})
 }

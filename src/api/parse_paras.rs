@@ -6,7 +6,10 @@ use std::ops::Deref;
 
 use argh::FromArgs;
 use once_cell::sync::OnceCell;
-use openai_dive::v1::resources::shared::ReasoningEffort;
+use openai_dive::v1::resources::{
+    chat::ChatMessage,
+    shared::ReasoningEffort,
+};
 use ron::de::from_str;
 use serde::Deserialize;
 
@@ -76,6 +79,10 @@ struct Paras {
     #[argh(option, short = 'q')]
     question: Vec<String>,
 
+    /// chat log file
+    #[argh(option, short = 'l')]
+    log: Vec<String>,
+
     /// select model by index, 1-based
     #[argh(option, short = 'm')]
     model: Option<usize>,
@@ -92,7 +99,7 @@ struct Paras {
     #[argh(option, short = 'e')]
     effort: Option<String>,
 
-    /// select tools
+    /// select tools by name
     #[argh(option, short = 'T')]
     selected_tools:  Option<String>,
 
@@ -112,6 +119,22 @@ struct Paras {
     #[argh(option, short = 's')]
     skills: Option<String>,
 
+    /// show all models
+    #[argh(switch, short = 'M')]
+    all_m: bool,
+
+    /// show all prompts
+    #[argh(switch, short = 'x')]
+    all_p: bool,
+
+    /// show all tools
+    #[argh(switch, short = 'y')]
+    all_t: bool,
+
+    /// show all skills
+    #[argh(switch, short = 'z')]
+    all_s: bool,
+
     /// system one decision model url
     #[argh(option, short = 'O')]
     systemone: Option<String>,
@@ -126,6 +149,7 @@ struct Paras {
 pub struct ParsedParas {
     pub api:             Api,                         // 各api的信息
     pub question:        Vec<(String, bool)>,         // (问题, 是否图片)，可以指定多次`-q`
+    pub log:             Vec<ChatMessage>,            // 之前的问答记录，可以指定多次`-l`
     pub selected_model:  SelectedModel,               // 根据索引选择的模型，1-based
     pub selected_tools:  Option<SelectedTools>,       // 选择工具，逗号间隔
     pub selected_prompt: Option<String>,              // 根据索引选择prompt，1-based
@@ -138,6 +162,10 @@ pub struct ParsedParas {
     pub skills:          Skills,                      // skills
     pub systemone:       Option<String>,              // system one 决策模型的 url
     pub deepseek_search_api_key: String,              // 用于 search 和 fetch
+    pub all_m:           bool,                        // 显示所有模型
+    pub all_p:           bool,                        // 显示所有 prompt
+    pub all_t:           bool,                        // 显示所有工具
+    pub all_s:           bool,                        // 显示所有skill
 }
 
 /// 选择的模型的信息
@@ -197,6 +225,8 @@ pub async fn parse_para() -> Result<ParsedParas, MyError> {
             }
         },
     };
+    let tools = Tools::new(other_para.external_tools)?;
+    let mcp_servers = McpServers::new(other_para.mcp_servers);
     let model = match para.model {
         Some(m) => api.get_model_by_usize(m)?,
         None => api.get_default_model()?,
@@ -234,28 +264,59 @@ pub async fn parse_para() -> Result<ParsedParas, MyError> {
             }
             questions
         },
+        log: {
+            let mut messages = Vec::new();
+            for log in para.log {
+                match read_to_string(&log) {
+                    Ok(l) => {
+                        match serde_json::from_str::<Vec<ChatMessage>>(&l) {
+                            Ok(m) => messages.extend(m),
+                            Err(e) => eprintln!("load previous chat log {} string to Vec<ChatMessage> error: {:?}", log, e),
+                        }
+                    },
+                    Err(e) => eprintln!("read log file {} to string error: {:?}", log, e),
+                }
+            }
+            messages
+        },
         selected_model: SelectedModel::new(model, para.temperature, para.top_p, para.effort),
         selected_tools: match para.selected_tools {
-            Some(t) => if t == "not_select_any_tools" {
-                None
-            } else if t == "select_all_tools" {
+            Some(t) => if t == "select_all_tools" {
+                eprintln!("selecte all tools");
                 Some(SelectedTools::All)
             } else if t == "select_all_built_in" {
+                eprintln!("selecte all built-in tools");
                 Some(SelectedTools::AllBuiltIn)
             } else if t == "select_all_external" {
+                eprintln!("selecte all external tools");
                 Some(SelectedTools::AllExternal)
             } else if t == "select_all_mcp" {
+                eprintln!("selecte all MCP tools");
                 Some(SelectedTools::AllMcp)
             } else if let Some(group) = t.strip_prefix("built_in_group_") {
+                eprintln!("selected built in group tools: {}", group);
                 Some(SelectedTools::Group(group.to_string()))
             } else if let Some(server_id) = t.strip_prefix("mcp_server_") {
+                eprintln!("selected MCP tools: {}", t);
                 Some(SelectedTools::McpServer(server_id.to_string()))
             } else if t.contains(",") { // 输入框内通过`@`选择的多个工具
-                Some(SelectedTools::Multiple(t.split(",").map(|s| s.to_string()).collect()))
+                let name_id: HashMap<String, String> = tools.get_all_tools_info().into_iter().map(|(uuid, name, _)| (name, uuid)).collect();
+                let tmp_tools_id = get_tool_id_by_name(name_id, &t);
+                eprintln!("selected tools: {}", t);
+                Some(SelectedTools::Multiple(tmp_tools_id))
             } else if t.contains("__") { // single mcp tool `name__id`, select by tool name and server id
-                Some(SelectedTools::McpTool(t.to_string()))
+                let name_id: HashMap<String, String> = mcp_servers.get_all_tools_info().into_iter().map(|(uuid, name, _)| (format!("{}__", name), format!("{}__{}", name, uuid))).collect();
+                if let Some(i) = name_id.get(&t) {
+                    eprintln!("selected MCP tool: {}", i);
+                    Some(SelectedTools::McpTool(i.to_string()))
+                } else {
+                    None
+                }
             } else { // select single built-in or external tool
-                Some(SelectedTools::Single(t.to_string()))
+                let name_id: HashMap<String, String> = tools.get_all_tools_info().into_iter().map(|(uuid, name, _)| (name, uuid)).collect();
+                let tmp_tools_id = get_tool_id_by_name(name_id, &t);
+                eprintln!("selected tool: {}", t);
+                Some(SelectedTools::Single(tmp_tools_id[0].clone()))
             },
             None => None,
         },
@@ -295,8 +356,8 @@ pub async fn parse_para() -> Result<ParsedParas, MyError> {
         },
         prompt,
         outpath: outpath.clone(), // 输出结果路径，不存在则创建，默认./chat-log，不需要加上`/`或`\`后缀（加上了会自动去除），保存chat记录、生成的图片
-        tools: Tools::new(other_para.external_tools)?, // all tools
-        mcp_servers: McpServers::new(other_para.mcp_servers), // mcp servers
+        tools, // all tools
+        mcp_servers, // mcp servers
         skills: {
             let skills_path = match para.skills {
                 Some(s) => Some(PathBuf::from(&s)),
@@ -329,6 +390,10 @@ pub async fn parse_para() -> Result<ParsedParas, MyError> {
             para.systemone
         },
         deepseek_search_api_key,
+        all_m: para.all_m,
+        all_p: para.all_p,
+        all_t: para.all_t,
+        all_s: para.all_s,
     };
     // 输出路径不存在则创建，已存在则删除其中的空uuid文件夹
     let tmp_outpath = Path::new(&out.outpath);
@@ -379,6 +444,18 @@ fn is_image(img: &Path) -> bool {
             | "heic" | "heif" | "avif" | "apng"
         )
     )
+}
+
+/// 逗号间隔的工具名转为工具id
+fn get_tool_id_by_name(tools: HashMap<String, String>, names: &str) -> Vec<String> {
+    // 所有工具: {name: uuid}
+    let mut ids = Vec::new();
+    for name in names.split(",") {
+        if let Some(u) = tools.get(name) {
+            ids.push(u.to_string());
+        }
+    }
+    ids
 }
 
 #[derive(Clone, Debug, Deserialize)]

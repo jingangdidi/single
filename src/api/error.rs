@@ -122,7 +122,7 @@ pub enum MyError {
 
     // 数据转为json字符串错误
     #[error("Error - to json string: {error}")]
-    ToJsonStirngError{uuid: String, error: json_error},
+    ToJsonStirngError{error: json_error},
 
     // json转字符串错误
     #[error("Error - serde_json::to_string: {error}")]

@@ -226,7 +226,7 @@ pub async fn run_tools(
     mut para_builder: ChatCompletionParametersBuilder,
     model: &str,
     messages: Vec<ChatMessage>,
-) -> Result<String, MyError> {
+) -> Result<(String, Vec<ChatMessage>), MyError> {
     // get built-in and external tools schame
     let mut tool_schema = PARAS.tools.get_desc_and_schema(&selected_tools)?;
     // get mcp tools schema
@@ -497,7 +497,7 @@ pub async fn run_tools(
             break
         }
     }
-    Ok(final_result)
+    Ok((final_result, history_messages))
 }
 
 /// sub-agent

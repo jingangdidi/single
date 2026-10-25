@@ -121,5 +121,5 @@ pub async fn deepseek_fetch(url: &str) -> Result<String, MyError> {
         .await
         .map_err(|e| MyError::OtherError{info: format!("failed to decode fetch response: {}", e)})?;
 
-    serde_json::to_string_pretty(&parsed).map_err(|e| MyError::ToJsonStirngError{uuid: "".to_string(), error: e})
+    serde_json::to_string_pretty(&parsed).map_err(|e| MyError::ToJsonStirngError{error: e})
 }

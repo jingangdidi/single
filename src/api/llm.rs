@@ -1,3 +1,6 @@
+use std::fs::write;
+
+use chrono::Local;
 use openai_dive::v1::{
     api::Client,
     resources::chat::{
@@ -92,7 +95,7 @@ pub async fn run_llm() -> Result<(), MyError> {
     if let Some(top_p) = PARAS.selected_model.top_p {
         para_builder.top_p(top_p);
     }
-    let mut messages = Vec::new();
+    let mut messages = PARAS.log.clone();
     // 插入 prompt
     if let Some(p) = &PARAS.selected_prompt {
         messages.push(
@@ -130,14 +133,32 @@ pub async fn run_llm() -> Result<(), MyError> {
     }
     eprintln!("selected model: {}", PARAS.selected_model.name);
     // 提问
-    if PARAS.selected_tools.is_some() || PARAS.selected_skills.is_some() {
-        let result = run_tools(PARAS.selected_tools.clone(), PARAS.selected_skills.clone(), client, para_builder.clone(), &PARAS.selected_model.name, messages).await?;
+    let result = if PARAS.selected_tools.is_some() || PARAS.selected_skills.is_some() {
+        let (result, call_tools) = run_tools(PARAS.selected_tools.clone(), PARAS.selected_skills.clone(), client, para_builder.clone(), &PARAS.selected_model.name, messages.clone()).await?;
+        messages = call_tools;
         println!("{}", result);
+        result
     } else {
-        para_builder.messages(messages);
+        para_builder.messages(messages.clone());
         let parameters = para_builder.build().map_err(|e| MyError::ChatCompletionError{error: e})?;
         let (whole_answer, _thinking_content) = not_use_stream(client, parameters).await?;
         println!("{}", whole_answer);
-    }
-    Ok(())
+        whole_answer
+    };
+    messages.push(
+        ChatMessage::Assistant{
+            content: Some(ChatMessageContent::Text(result)),
+            reasoning: None,
+            reasoning_content: None,
+            refusal: None,
+            name: None,
+            audio: None,
+            tool_calls: None,
+        }
+    );
+    let chat_log_json_str = serde_json::to_string_pretty(&messages).map_err(|e| MyError::ToJsonStirngError{error: e})?;
+    // 加上指定的输出路径
+    let file = format!("{}/{}.json", PARAS.outpath, Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
+    // 保存chat记录
+    write(&file, chat_log_json_str).map_err(|e| MyError::WriteFileError{file: file, error: e})
 }
